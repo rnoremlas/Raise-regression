@@ -1,0 +1,228 @@
+angle <- function(x,y) { ## Function to calculate angles
+  calculo <- sum(x*y)/(sqrt(sum(x^2))*sqrt(sum(y^2)))
+  angleprevio<-acos(calculo)
+  angle<-angleprevio*180/pi
+  return(angle)  
+}
+
+###
+
+estandarizar = function(x) # function to clculate standardized data
+{ # x is a vector
+  x_est = (x-mean(x))/sqrt((length(x)-1)*var(x))
+  return(x_est)
+}
+
+###
+
+estandarizar_matrix <- function(X)
+{
+  observaciones = dim(X)[1]
+  variables = dim(X)[2]
+  
+  Xstand=array(,c(observaciones,variables))
+  for (i in 1:variables) {
+    for (j in 1:observaciones) {
+      Xstand[j,i] = (X[j,i] - mean(X[,i]))/sqrt((observaciones-1)*var(X[,i]))
+    }
+  }
+  return(Xstand)
+}
+
+###
+
+longitud_unidad <- function(X) # function to clculate unit length data
+{
+  observaciones = dim(X)[1]
+  variables = dim(X)[2]
+  
+  Xlu=array(,c(observaciones,variables))
+  for (i in 1:variables) {
+    for (j in 1:observaciones) {
+      Xlu[j,i] = X[j,i]/sqrt(crossprod(X[,i]))
+    }
+  }
+  return(Xlu)
+}
+
+
+###
+
+FIV <- function(X){
+  # in X there is no intercept
+  observaciones = dim(X)[1]
+  variables = dim(X)[2]
+  
+  fiv=array(0,variables)
+  for (i in 1:variables) {
+    reg_aux = lm(X[,i]~X[,-i])
+    R2 = as.numeric(summary(reg_aux)[8])
+    fiv[i] = 1/(1-R2)
+  }
+  return(fiv)
+}
+
+######################################################
+## ridge functions
+
+BetaR = function(y, X, k){
+  p = dim(X)[[2]]
+  I = diag(p)
+  beta_r = solve(crossprod(X)+k*I)%*%crossprod(X,y)
+  return(beta_r)
+}
+
+###
+
+MSEridge <- function(X,sigma2,beta,k) # function to calculate MSE in ridge regression 
+{
+  XX = crossprod(X)
+  dimensiones = dim(XX)
+  p = dimensiones[[1]]
+  descomposicion=eigen(XX)
+  landas=descomposicion[[1]]
+  #
+  suma = 0
+  for (i in 1:p) {
+    suma = suma + (landas[i]/(landas[i]+k)^2)
+  }
+  suma = sigma2*suma
+  #
+  Zk = solve(XX+k*diag(p))%*%XX
+  sesgo = t(beta)%*%t(Zk-diag(p))%*%(Zk-diag(p))%*%beta
+  #
+  mse = suma + sesgo
+  return(mse)
+}
+
+###
+
+k_calculation <- function(y, X, k_values, intercept=1, DATA) {
+  min_rid <- Inf
+  for (k in k_values) {
+    if (intercept==1) rid_result <- rid(y ~ X, k, data = DATA)
+    if (intercept!=1) rid_result <- rid(y ~ 0 + X, k, data = DATA)
+    mse_value <- rid_result$`*****Mean square error value*****`
+    if (mse_value < min_rid) {
+      min_rid <- mse_value
+      best_k <- k
+    }
+  }
+  return(best_k)
+}
+
+######################################################
+## raise functions
+
+MSEraise <- function(X,sigma2,beta,landa,alfa,var_alzada) # function to calculate MSE in raise regression
+{
+  # in X there is intercept	
+  XX = crossprod(X) 
+  dimensiones = dim(XX)
+  p = dimensiones[[1]] 
+  #
+  Mlanda = diag(p)
+  if (var_alzada == p)
+  {
+    for (i in 1:(var_alzada-1)){
+      Mlanda[i,var_alzada] = -landa*alfa[i]
+    }    
+    Mlanda[var_alzada,var_alzada] = 1 + landa
+  }
+  if (var_alzada != p)
+  {
+    for (i in 1:(var_alzada-1)){
+      Mlanda[i,var_alzada] = -landa*alfa[i]
+    }
+    for (i in (var_alzada+1):p){
+      Mlanda[i,var_alzada] = -landa*alfa[i-1]
+    }
+    Mlanda[var_alzada,var_alzada] = 1 + landa
+  }
+  #
+  varianza = solve(Mlanda%*%t(Mlanda)%*%XX)
+  suma = sigma2*sum(diag(varianza))
+  #
+  sesgo = t(beta)%*%t(solve(Mlanda)-diag(p))%*%(solve(Mlanda)-diag(p))%*%beta
+  #
+  mse = suma + sesgo
+  return(mse)
+}
+
+###
+
+AlzadoFIV <- function(X, alzar, inicio, salto, tope) # function to calculate the FIV in raise regression
+{
+  # in X there is no intercept
+  observaciones = dim(X)[1]
+  variables = dim(X)[2]
+  discretizacion = seq(inicio,tope,salto)
+  
+  # regresión auxiliar
+  reg_aux = lm(X[,alzar]~X[,-alzar])
+  e = residuals(reg_aux)
+  
+  # VIF
+  j = 0
+  fiv=matrix(0,length(discretizacion),variables+1)
+  for (i in discretizacion) {
+    j = j + 1
+    Xtilde = X
+    Xtilde[,alzar] = X[,alzar] + i*e # la variable alzada se queda en su sitio
+    fiv[j,1] = i
+    fiv[j,2:(variables+1)] = FIV(Xtilde)
+  }
+  
+  # salida
+  filas = c()
+  for(k in discretizacion)
+  {
+    filas = c("",filas)
+  }
+  rownames(fiv) = filas
+  columnas = c("k")
+  for (i in 2:(variables+1))
+  {
+    columnas = c(columnas, paste("VIF",i))
+  }
+  colnames(fiv) = columnas
+  return(fiv)
+}
+
+###
+
+VIF_less10 <- function(matrix, tol=10){
+	n = nrow(matrix)
+	matrix = matrix[,-1]
+	for (i in 1:n){
+		if (max(matrix[i,]) < tol){
+			index = i
+			break
+		}
+	}
+	return(index)
+}
+
+###
+
+auxiliary_regression <- function(X, var_alzada, sigma2, beta){
+  # in X there is intercept
+  reg_aux = lm(X[,var_alzada]~X[,-var_alzada]+0)
+  alfa=as.matrix(reg_aux$coef)
+  scr_aux = crossprod(reg_aux$residuals)
+  landa_min = sigma2/((beta[var_alzada]^2)*scr_aux)
+  #
+  output = list(alfa, landa_min)
+  return(output)
+}
+
+###
+
+X_raised <- function(X, var_alzada, landa){
+  # in X there is intercept
+  reg_aux = lm(X[,var_alzada]~X[,-c(1,var_alzada)])
+  e_aux = reg_aux$residuals
+  x_alzada <- X[,var_alzada] + landa*e_aux
+  X[,var_alzada] = x_alzada
+  return(X)
+}
